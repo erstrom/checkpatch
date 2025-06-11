@@ -65,7 +65,6 @@ my $spelling_file = "$D/spelling.txt";
 my $codespell = 0;
 my $codespellfile = "/usr/share/codespell/dictionary.txt";
 my $user_codespellfile = "";
-my $conststructsfile = "$D/const_structs.checkpatch";
 my $docsfile = "$D/../Documentation/dev-tools/checkpatch.rst";
 my $typedefsfile;
 my $color = "auto";
@@ -465,23 +464,7 @@ if ($terse) {
 }
 
 if ($tree) {
-	if (defined $root) {
-		if (!top_of_kernel_tree($root)) {
-			die "$P: $root: --root does not point at a valid tree\n";
-		}
-	} else {
-		if (top_of_kernel_tree('.')) {
-			$root = '.';
-		} elsif ($0 =~ m@(.*)/scripts/[^/]*$@ &&
-						top_of_kernel_tree($1)) {
-			$root = $1;
-		}
-	}
-
-	if (!defined $root) {
-		print "Must be run from the top-level dir. of a kernel tree\n";
-		exit(2);
-	}
+	$root = '.';
 }
 
 my $emitted_corrupt = 0;
@@ -946,25 +929,6 @@ our $allowed_asm_includes = qr{(?x:
 my $misspellings;
 my %spelling_fix;
 
-if (open(my $spelling, '<', $spelling_file)) {
-	while (<$spelling>) {
-		my $line = $_;
-
-		$line =~ s/\s*\n?$//g;
-		$line =~ s/^\s*//g;
-
-		next if ($line =~ m/^\s*#/);
-		next if ($line =~ m/^\s*$/);
-
-		my ($suspect, $fix) = split(/\|\|/, $line);
-
-		$spelling_fix{$suspect} = $fix;
-	}
-	close($spelling);
-} else {
-	warn "No typos will be found - file '$spelling_file': $!\n";
-}
-
 if ($codespell) {
 	if (open(my $spelling, '<', $codespellfile)) {
 		while (<$spelling>) {
@@ -1019,10 +983,6 @@ sub read_words {
 }
 
 my $const_structs;
-if (show_type("CONST_STRUCT")) {
-	read_words(\$const_structs, $conststructsfile)
-	    or warn "No structs that should be const will be found - file '$conststructsfile': $!\n";
-}
 
 if (defined($typedefsfile)) {
 	my $typeOtherTypedefs;
@@ -3737,60 +3697,6 @@ sub process {
 				if ( $? >> 8 ) {
 					WARN("UNDOCUMENTED_DT_STRING",
 					     "DT compatible string vendor \"$vendor\" appears un-documented -- check $vp_file\n" . $herecurr);
-				}
-			}
-		}
-
-# check for using SPDX license tag at beginning of files
-		if ($realline == $checklicenseline) {
-			if ($rawline =~ /^[ \+]\s*\#\!\s*\//) {
-				$checklicenseline = 2;
-			} elsif ($rawline =~ /^\+/) {
-				my $comment = "";
-				if ($realfile =~ /\.(h|s|S)$/) {
-					$comment = '/*';
-				} elsif ($realfile =~ /\.(c|rs|dts|dtsi)$/) {
-					$comment = '//';
-				} elsif (($checklicenseline == 2) || $realfile =~ /\.(sh|pl|py|awk|tc|yaml)$/) {
-					$comment = '#';
-				} elsif ($realfile =~ /\.rst$/) {
-					$comment = '..';
-				}
-
-# check SPDX comment style for .[chsS] files
-				if ($realfile =~ /\.[chsS]$/ &&
-				    $rawline =~ /SPDX-License-Identifier:/ &&
-				    $rawline !~ m@^\+\s*\Q$comment\E\s*@) {
-					WARN("SPDX_LICENSE_TAG",
-					     "Improper SPDX comment style for '$realfile', please use '$comment' instead\n" . $herecurr);
-				}
-
-				if ($comment !~ /^$/ &&
-				    $rawline !~ m@^\+\Q$comment\E SPDX-License-Identifier: @) {
-					WARN("SPDX_LICENSE_TAG",
-					     "Missing or malformed SPDX-License-Identifier tag in line $checklicenseline\n" . $herecurr);
-				} elsif ($rawline =~ /(SPDX-License-Identifier: .*)/) {
-					my $spdx_license = $1;
-					if (!is_SPDX_License_valid($spdx_license)) {
-						WARN("SPDX_LICENSE_TAG",
-						     "'$spdx_license' is not supported in LICENSES/...\n" . $herecurr);
-					}
-					if ($realfile =~ m@^Documentation/devicetree/bindings/@ &&
-					    $spdx_license !~ /GPL-2\.0(?:-only)? OR BSD-2-Clause/) {
-						my $msg_level = \&WARN;
-						$msg_level = \&CHK if ($file);
-						if (&{$msg_level}("SPDX_LICENSE_TAG",
-
-								  "DT binding documents should be licensed (GPL-2.0-only OR BSD-2-Clause)\n" . $herecurr) &&
-						    $fix) {
-							$fixed[$fixlinenr] =~ s/SPDX-License-Identifier: .*/SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)/;
-						}
-					}
-					if ($realfile =~ m@^include/dt-bindings/@ &&
-					    $spdx_license !~ /GPL-2\.0(?:-only)? OR \S+/) {
-						WARN("SPDX_LICENSE_TAG",
-						     "DT binding headers should be licensed (GPL-2.0-only OR .*)\n" . $herecurr);
-					}
 				}
 			}
 		}
@@ -7005,22 +6911,10 @@ sub process {
 #			}
 #		}
 
-# strcpy uses that should likely be strscpy
+# strcpy uses that should likely be strncpy
 		if ($line =~ /\bstrcpy\s*\(/) {
 			WARN("STRCPY",
-			     "Prefer strscpy over strcpy - see: https://github.com/KSPP/linux/issues/88\n" . $herecurr);
-		}
-
-# strlcpy uses that should likely be strscpy
-		if ($line =~ /\bstrlcpy\s*\(/) {
-			WARN("STRLCPY",
-			     "Prefer strscpy over strlcpy - see: https://github.com/KSPP/linux/issues/89\n" . $herecurr);
-		}
-
-# strncpy uses that should likely be strscpy or strscpy_pad
-		if ($line =~ /\bstrncpy\s*\(/) {
-			WARN("STRNCPY",
-			     "Prefer strscpy, strscpy_pad, or __nonstring over strncpy - see: https://github.com/KSPP/linux/issues/90\n" . $herecurr);
+			     "Prefer strncpy over strcpy\n" . $herecurr);
 		}
 
 # ethtool_sprintf uses that should likely be ethtool_puts
